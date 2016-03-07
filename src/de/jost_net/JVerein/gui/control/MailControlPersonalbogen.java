@@ -224,8 +224,7 @@ public class MailControlPersonalbogen extends MailControl {
 	          
 	          monitor.setPercentComplete(100);
 	          monitor.setStatus(ProgressMonitor.STATUS_DONE);
-	          monitor.setStatusText(MessageFormat.format(
-	              "Anzahl verschickter Mails: {0}", sentCount + ""));
+	          monitor.setStatusText("Anzahl verschickter Mails: " + sentCount);
 	          
 	          handleStore(true);
 	          monitor.setStatusText("Mail in DB gespeichert.");

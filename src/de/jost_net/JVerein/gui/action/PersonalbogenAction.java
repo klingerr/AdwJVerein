@@ -24,6 +24,7 @@ import java.rmi.RemoteException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.DecimalFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -230,7 +231,16 @@ public class PersonalbogenAction implements Action
   public void generiereMitglied(Reporter rpt, Mitglied m)
       throws DocumentException, MalformedURLException, IOException
   {
-    rpt.add("Persönliche Angaben (Stand vom " + simpleDateFormat.format(m.getLetzteAenderung()) + ")", 9);
+	Date letzteAenderung =  m.getLetzteAenderung();
+    if (letzteAenderung == null) {
+    	try {
+			letzteAenderung = simpleDateFormat.parse("01.07.2014");
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+    }
+    rpt.add("Persönliche Angaben (Stand vom " + simpleDateFormat.format(letzteAenderung) + ")", 9);
 	  
     rpt.addHeaderColumn("Feld", Element.ALIGN_LEFT, 65, BaseColor.LIGHT_GRAY);
     rpt.addHeaderColumn("Inhalt", Element.ALIGN_LEFT, 115, BaseColor.LIGHT_GRAY);
@@ -426,26 +436,17 @@ public class PersonalbogenAction implements Action
         }
       }
       
-      // Summenzeilen und MwSt. ausweisen
-      if (tax == null) {
-  		rpt.addColumn("Gesamtbetrag: ", Element.ALIGN_RIGHT, 4);
-  		rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
-  		rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
-      } else {
-  		rpt.addColumn("Gesamtbetrag (netto): ", Element.ALIGN_RIGHT, 4);
-  		rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
-  		rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
-		rpt.addColumn(tax.getBuchungstext(), Element.ALIGN_RIGHT, 4);
-  		rpt.addColumn(df.format(tax.getBetrag()/6.0) + " EUR", Element.ALIGN_RIGHT);
-		rpt.addColumn(df.format(tax.getBetrag()) + " EUR", Element.ALIGN_RIGHT, 4);
-		summeHalbjahr += tax.getBetrag();
-  		rpt.addColumn("Gesamtbetrag (brutto): ", Element.ALIGN_RIGHT, 4);
-  		rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
-  		rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
-      }
-//	  rpt.addColumn("Gesamter Zahlbetrag pro Kalenderjahr: ", Element.ALIGN_RIGHT, 5);
-//      rpt.addColumn(df.format(summeHalbjahr*2.0) + " EUR", Element.ALIGN_RIGHT);
-      
+      // Summenzeilen und MwSt. immer ausweisen
+  	  rpt.addColumn("Gesamtbetrag (netto): ", Element.ALIGN_RIGHT, 4);
+	  rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
+	  rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
+	  rpt.addColumn("zzgl. 7% MwSt. auf Bootsliegeentgelt: ", Element.ALIGN_RIGHT, 4);
+	  rpt.addColumn(df.format(tax == null ? 0.0 : tax.getBetrag()/6.0) + " EUR", Element.ALIGN_RIGHT);
+	  rpt.addColumn(df.format(tax == null ? 0.0 : tax.getBetrag()) + " EUR", Element.ALIGN_RIGHT, 4);
+	  summeHalbjahr += tax == null ? 0.0 : tax.getBetrag();
+	  rpt.addColumn("Gesamtbetrag (brutto): ", Element.ALIGN_RIGHT, 4);
+	  rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
+	  rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
     }
     rpt.closeTable();
   }
@@ -476,50 +477,6 @@ public class PersonalbogenAction implements Action
 		rpt.addColumn(df.format(halbjahresBetrag) + " EUR", Element.ALIGN_RIGHT);
 	}
 
-//  private void generiereMitgliedskonto(Reporter rpt, Mitglied m)
-//      throws RemoteException, DocumentException
-//  {
-//    DBIterator it = Einstellungen.getDBService().createList(
-//        Mitgliedskonto.class);
-//    it.addFilter("mitglied = ?", new Object[] { m.getID() });
-//    it.setOrder("order by datum desc");
-//    if (it.size() > 0)
-//    {
-//      rpt.add(new Paragraph("Mitgliedskonto"));
-//      rpt.addHeaderColumn("Text", Element.ALIGN_LEFT, 12, BaseColor.LIGHT_GRAY);
-//      rpt.addHeaderColumn("Datum", Element.ALIGN_LEFT, 30, BaseColor.LIGHT_GRAY);
-//      rpt.addHeaderColumn("Zweck", Element.ALIGN_LEFT, 50, BaseColor.LIGHT_GRAY);
-//      rpt.addHeaderColumn("Zahlungsweg", Element.ALIGN_LEFT, 30,
-//          BaseColor.LIGHT_GRAY);
-//      rpt.addHeaderColumn("Betrag", Element.ALIGN_LEFT, 30,
-//          BaseColor.LIGHT_GRAY);
-//      rpt.createHeader();
-//      while (it.hasNext())
-//      {
-//        Mitgliedskonto mk = (Mitgliedskonto) it.next();
-//        rpt.addColumn("Soll", Element.ALIGN_LEFT);
-//        rpt.addColumn(mk.getDatum(), Element.ALIGN_LEFT);
-//        rpt.addColumn(mk.getZweck1(), Element.ALIGN_LEFT);
-//        rpt.addColumn(Zahlungsweg.get(mk.getZahlungsweg()), Element.ALIGN_LEFT);
-//        rpt.addColumn(mk.getBetrag());
-//        DBIterator it2 = Einstellungen.getDBService().createList(Buchung.class);
-//        it2.addFilter("mitgliedskonto = ?", new Object[] { mk.getID() });
-//        it2.setOrder("order by datum desc");
-//        while (it2.hasNext())
-//        {
-//          Buchung bu = (Buchung) it2.next();
-//          rpt.addColumn("Ist", Element.ALIGN_RIGHT);
-//          rpt.addColumn(bu.getDatum(), Element.ALIGN_LEFT);
-//          rpt.addColumn(bu.getZweck(), Element.ALIGN_LEFT);
-//          rpt.addColumn("", Element.ALIGN_LEFT);
-//          rpt.addColumn(bu.getBetrag());
-//        }
-//      }
-//    }
-//    rpt.closeTable();
-//
-//  }
-
   
   public void generiereMitgliedskonto2(Reporter rpt, Mitglied m)
 	      throws RemoteException, DocumentException
@@ -542,18 +499,6 @@ public class PersonalbogenAction implements Action
 		    rpt.addHeaderColumn("Differenz", Element.ALIGN_RIGHT, 20,  BaseColor.LIGHT_GRAY);
 		    rpt.createHeader();
 
-//		    while (gi1.hasNext())
-//		    {
-//		      MitgliedskontoNode n1 = (MitgliedskontoNode) gi1.next();
-//		      generiereZeile(rpt, n1, null, false);
-//		      GenericIterator gi2 = n1.getChildren();
-//		      while (gi2.hasNext())
-//		      {
-//		        MitgliedskontoNode n2 = (MitgliedskontoNode) gi2.next();
-//		        generiereZeile(rpt, n2, null, false);
-//		      }
-//		    }
-
 		    // Summenzeile
 		    generiereZeile(rpt, lastNode, null, true);
 	    
@@ -570,6 +515,9 @@ public class PersonalbogenAction implements Action
 		    Double payAmount = (Double) lastNode.getAttribute("differenz") + diffCurrentTerm;
 		    generiereZeile(rpt, currentNode, payAmount, false);
 	    
+			// Summe zurücksetzen, sonst Übertrag zum nächsten Mitglied
+			summeHalbjahr = 0.0;
+
 //	    }
 	    rpt.closeTable();
 	    rpt.add("Bitte die Angaben genau prüfen! Es können unbeabsichtigte Fehler aufgetreten sein.", 9);
