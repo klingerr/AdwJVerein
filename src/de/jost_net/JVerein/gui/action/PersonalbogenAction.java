@@ -78,7 +78,11 @@ public class PersonalbogenAction implements Action
   private static final String TERM_TYPE_LAST = "last";
   private de.willuhn.jameica.system.Settings settings;
   DecimalFormat df = new DecimalFormat("0.00");
+  // Präsentation auf Datenblatt
   SimpleDateFormat simpleDateFormat = new SimpleDateFormat("dd.MM.yyyy");
+  // Abfrage der H2-DB
+  SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
+
   private double summeHalbjahr = 0.0;
   private Date vonZahlungszeitraum = null;
 		  
@@ -402,10 +406,24 @@ public class PersonalbogenAction implements Action
       throws RemoteException, DocumentException
   {
     DBIterator it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
+    
+    // wenn die Zusatzbeträge noch nicht gebucht wurden, d.h. noch kein Abrechnungslauf stattgefunden hat
     it.addFilter("mitglied = ?", new Object[] { m.getID() });
+    it.addFilter("faelligkeit >= ? and faelligkeit < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
     it.setOrder("ORDER BY faelligkeit DESC");
-    if (it.size() > 0)
+    
+//    Logger.info("1) generiereZusatzbetrag() - it.size(): " + it.size());
+    
+    if (it.size() == 0)
     {
+      it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
+      // wenn die Zusatzbeträge gebucht sind, d.h. ein Abrechnungslauf durchgeführt wurde
+      it.addFilter("mitglied = ?", new Object[] { m.getID() });
+      it.addFilter("ausfuehrung >= ? and ausfuehrung < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
+      it.setOrder("ORDER BY faelligkeit DESC");
+    }
+//    Logger.info("2) generiereZusatzbetrag() - it.size(): " + it.size());
+    
       rpt.add(new Paragraph("Beitrag / Umlagen / Sanktionen"));
 //      rpt.addHeaderColumn("Start", Element.ALIGN_LEFT, 30, BaseColor.LIGHT_GRAY);
       rpt.addHeaderColumn("nächste Fäll.", Element.ALIGN_LEFT, 23, BaseColor.LIGHT_GRAY);
@@ -447,7 +465,7 @@ public class PersonalbogenAction implements Action
 	  rpt.addColumn("Gesamtbetrag (brutto): ", Element.ALIGN_RIGHT, 4);
 	  rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
 	  rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
-    }
+//    }
     rpt.closeTable();
   }
 
@@ -488,9 +506,9 @@ public class PersonalbogenAction implements Action
 //	    if (gi1.size() > 0)
 //	    {
 	        rpt.add(new Paragraph("Mitgliedskontostand (Stichtag: " + new JVDateFormatTTMMJJJJ().format(getLastBookingDate()) + ")"));
-		    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 20, BaseColor.LIGHT_GRAY);
-		    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 20, BaseColor.LIGHT_GRAY);
-		    rpt.addHeaderColumn("", Element.ALIGN_LEFT, 70, BaseColor.LIGHT_GRAY);
+		    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 0, BaseColor.LIGHT_GRAY);
+		    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 0, BaseColor.LIGHT_GRAY);
+		    rpt.addHeaderColumn("", Element.ALIGN_LEFT, 110, BaseColor.LIGHT_GRAY);
 //		    rpt.addHeaderColumn("Datum", Element.ALIGN_CENTER, 20, BaseColor.LIGHT_GRAY);
 //		    rpt.addHeaderColumn("Zweck", Element.ALIGN_LEFT, 70, BaseColor.LIGHT_GRAY);
 //		    rpt.addHeaderColumn("Zahlungsweg", Element.ALIGN_LEFT, 20,  BaseColor.LIGHT_GRAY);
@@ -514,9 +532,9 @@ public class PersonalbogenAction implements Action
 //		    Double payAmount = (Double) lastNode.getAttribute("differenz") + (Double) currentNode.getAttribute("differenz");
 		    Double payAmount = (Double) lastNode.getAttribute("differenz") + diffCurrentTerm;
 		    generiereZeile(rpt, currentNode, payAmount, false);
-	    
-			// Summe zurücksetzen, sonst Übertrag zum nächsten Mitglied
-			summeHalbjahr = 0.0;
+//	    
+//			// Summe zurücksetzen, sonst Übertrag zum nächsten Mitglied
+//			summeHalbjahr = 0.0;
 
 //	    }
 	    rpt.closeTable();
@@ -528,13 +546,52 @@ public class PersonalbogenAction implements Action
 	    		"\n   Deutsche Kreditbank AG", 9);
 	  }
 
+  private Date getFirstDayOfCurrentHalfYear() {
+		Calendar cal = Calendar.getInstance();
+		boolean isFirstTerm = cal.get(Calendar.MONTH) <= 6 ? true : false;
+		Date von = null;		
+
+		// 1. Halbjahr des aktuellen Jahres
+		if (isFirstTerm) {
+			cal.set(Calendar.MONTH, 0); // 0 = januray
+			cal.set(Calendar.DAY_OF_MONTH, 1);
+			von = cal.getTime();
+		// 2. Halbjahr des aktuellen Jahres
+		} else {
+			cal.set(Calendar.MONTH, 6); // 6 = july
+			cal.set(Calendar.DAY_OF_MONTH, 1);
+			von = cal.getTime();
+		}
+
+  	return von;
+  }
+
+  private Date getLastDayOfCurrentHalfYear() {
+		Calendar cal = Calendar.getInstance();
+		boolean isFirstTerm = cal.get(Calendar.MONTH) <= 6 ? true : false;
+		Date bis = null;		
+
+		// 1. Halbjahr des aktuellen Jahres
+		if (isFirstTerm) {
+			cal.set(Calendar.MONTH, 5); // 5 = june
+			cal.set(Calendar.DAY_OF_MONTH, 30);
+			bis = cal.getTime();
+		// 2. Halbjahr des aktuellen Jahres
+		} else {
+			cal.set(Calendar.MONTH, 11); // 11 = december
+			cal.set(Calendar.DAY_OF_MONTH, 31);
+			bis = cal.getTime();
+		}
+
+  	return bis;
+  }
+
 	private MitgliedskontoNode getTermBookings(Mitglied m, String termType) throws RemoteException {
 		Calendar cal = Calendar.getInstance();
 		boolean isFirstTerm = cal.get(Calendar.MONTH) <= 6 ? true : false;
 		Date von = null, bis = null;		
 
 		if (termType.equals(TERM_TYPE_CURRENT)) {
-//			cal.set(Calendar.YEAR, cal.get(Calendar.YEAR));
 			// 1. Halbjahr des aktuellen Jahres
 			if (isFirstTerm) {
 				cal.set(Calendar.MONTH, 0); // 0 = januray
@@ -565,10 +622,10 @@ public class PersonalbogenAction implements Action
 				cal.set(Calendar.DAY_OF_MONTH, 30);
 				bis = cal.getTime();
 			}
-			// Alle Einzahlungen seit 1.1. des Vorjahres berücksichtigen
+			// Alle Einzahlungen seit 1.7.2014 berücksichtigen
 			cal = Calendar.getInstance();
-			cal.set(Calendar.YEAR, cal.get(Calendar.YEAR) - 1); // letztes Jahr
-			cal.set(Calendar.MONTH, 0); // 0 = january
+			cal.set(Calendar.YEAR, 2014);
+			cal.set(Calendar.MONTH, 6); // 6 = juli
 			cal.set(Calendar.DAY_OF_MONTH, 1);
 			von = cal.getTime();
 			this.vonZahlungszeitraum = von;
@@ -593,7 +650,8 @@ public class PersonalbogenAction implements Action
 		    {
 		      case MitgliedskontoNode.MITGLIED:
 		    	if (isLastTerm) {
-		    	  rpt.addColumn("Übertrag aus Zahlungszeiträumen seit " + simpleDateFormat.format(vonZahlungszeitraum), Element.ALIGN_LEFT, 3);
+//			    	  rpt.addColumn("Übertrag aus Zahlungszeiträumen seit " + simpleDateFormat.format(vonZahlungszeitraum), Element.ALIGN_LEFT, 3);
+			    	  rpt.addColumn("Übertrag aus vorigen Zahlungszeiträumen", Element.ALIGN_LEFT, 3);
 		    	} else {
 		    	  rpt.addColumn("Teilsummen aus aktuellem Halbjahr", Element.ALIGN_LEFT, 3);
 		    	}
@@ -610,8 +668,8 @@ public class PersonalbogenAction implements Action
 		        break;
 		    }
 	    
-		    rpt.addColumn(df.format((Double) node.getAttribute("soll")) + " EUR", Element.ALIGN_RIGHT);
-		    rpt.addColumn(df.format((Double) node.getAttribute("ist")) + " EUR", Element.ALIGN_RIGHT);
+		    rpt.addColumn(" ", Element.ALIGN_RIGHT);
+		    rpt.addColumn(" ", Element.ALIGN_RIGHT);
 		    rpt.addColumn(df.format((Double) node.getAttribute("differenz")) + " EUR", Element.ALIGN_RIGHT);
 		}
 	  }
@@ -824,7 +882,6 @@ public class PersonalbogenAction implements Action
 	cal.set(Calendar.MONTH, 0); // 0 = january
 	cal.set(Calendar.DAY_OF_MONTH, 1);
 
-    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
     it.addFilter("mitglied = ? and datum >= ?", new Object[] { m.getID(), sdf.format(cal.getTime()) });
     it.setOrder("ORDER BY datum");
     if (it.size() > 0)
