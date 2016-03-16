@@ -405,24 +405,25 @@ public class PersonalbogenAction implements Action
   public void generiereZusatzbetrag(Reporter rpt, Mitglied m)
       throws RemoteException, DocumentException
   {
-    DBIterator it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
-    
-    // wenn die Zusatzbeträge noch nicht gebucht wurden, d.h. noch kein Abrechnungslauf stattgefunden hat
+    DBIterator it;
+
+    // wenn die Zusatzbeträge gebucht sind, d.h. ein Abrechnungslauf durchgeführt wurde
+    it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
     it.addFilter("mitglied = ?", new Object[] { m.getID() });
-    it.addFilter("faelligkeit >= ? and faelligkeit < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
+    it.addFilter("ausfuehrung >= ? and ausfuehrung < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
     it.setOrder("ORDER BY faelligkeit DESC");
-    
-//    Logger.info("1) generiereZusatzbetrag() - it.size(): " + it.size());
-    
+    Logger.info("generiereZusatzbetrag(ausfuehrung) - it.size(): " + it.size());
+
     if (it.size() == 0)
     {
-      it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
-      // wenn die Zusatzbeträge gebucht sind, d.h. ein Abrechnungslauf durchgeführt wurde
-      it.addFilter("mitglied = ?", new Object[] { m.getID() });
-      it.addFilter("ausfuehrung >= ? and ausfuehrung < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
-      it.setOrder("ORDER BY faelligkeit DESC");
+        // wenn die Zusatzbeträge noch nicht gebucht wurden, d.h. noch kein Abrechnungslauf stattgefunden hat
+        it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
+        it.addFilter("mitglied = ?", new Object[] { m.getID() });
+        it.addFilter("faelligkeit >= ? and faelligkeit < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
+        it.setOrder("ORDER BY faelligkeit DESC");
+        
+        Logger.info("generiereZusatzbetrag(faelligkeit) - it.size(): " + it.size());
     }
-//    Logger.info("2) generiereZusatzbetrag() - it.size(): " + it.size());
     
       rpt.add(new Paragraph("Beitrag / Umlagen / Sanktionen"));
 //      rpt.addHeaderColumn("Start", Element.ALIGN_LEFT, 30, BaseColor.LIGHT_GRAY);
@@ -436,10 +437,15 @@ public class PersonalbogenAction implements Action
       rpt.addHeaderColumn("Betrag / Halbjahr", Element.ALIGN_RIGHT, 28, BaseColor.LIGHT_GRAY);
       rpt.createHeader();
       
-      addRowZusatzbetrag(rpt, getFaelligkeit(), INTERVALL_HALBJAEHRLICH, null
-    		  , "Mitgliedsbeitrag: " + m.getBeitragsgruppe().getBezeichnung(), m.getBeitragsgruppe().getBetrag()*6.0);
+      int numberOfMonthsMembership = 6;
+      if (m.getAustritt() != null) {
+    	  numberOfMonthsMembership = m.getAustritt().getMonth() - getFirstDayOfCurrentHalfYear().getMonth() + 1;
+      }
       
-      summeHalbjahr = m.getBeitragsgruppe().getBetrag()*6.0;
+      summeHalbjahr = m.getBeitragsgruppe().getBetrag()*numberOfMonthsMembership;
+      addRowZusatzbetrag(rpt, getFaelligkeit(), INTERVALL_HALBJAEHRLICH, null
+    		  , "Mitgliedsbeitrag: " + m.getBeitragsgruppe().getBezeichnung(), summeHalbjahr);
+      
       Zusatzbetrag tax = null;
       
       while (it.hasNext())
