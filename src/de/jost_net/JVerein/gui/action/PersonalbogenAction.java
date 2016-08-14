@@ -411,10 +411,12 @@ public class PersonalbogenAction implements Action
     it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
     it.addFilter("mitglied = ?", new Object[] { m.getID() });
     it.addFilter("ausfuehrung >= ? and ausfuehrung < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
+    it.addFilter("faelligkeit > ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()) });
     it.setOrder("ORDER BY faelligkeit DESC");
-    Logger.info("generiereZusatzbetrag(ausfuehrung) - it.size(): " + it.size());
 
-    if (it.size() == 0)
+    boolean abrechnungslaufDurchgefuehrt = it.size() > 0;
+    
+    if (!abrechnungslaufDurchgefuehrt)
     {
         // wenn die Zusatzbeträge noch nicht gebucht wurden, d.h. noch kein Abrechnungslauf stattgefunden hat
         it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
@@ -423,6 +425,8 @@ public class PersonalbogenAction implements Action
         it.setOrder("ORDER BY faelligkeit DESC");
         
         Logger.info("generiereZusatzbetrag(faelligkeit) - it.size(): " + it.size());
+    } else {
+        Logger.info("generiereZusatzbetrag(ausfuehrung) - it.size(): " + it.size());
     }
     
       rpt.add(new Paragraph("Beitrag / Umlagen / Sanktionen"));
@@ -451,10 +455,21 @@ public class PersonalbogenAction implements Action
       while (it.hasNext())
       {
         Zusatzbetrag z = (Zusatzbetrag) it.next();
-        if (!z.getBuchungstext().toUpperCase().contains("Mehrwertsteuer".toUpperCase())
-        		&& !z.getBuchungstext().toUpperCase().contains("MwSt".toUpperCase())) {
-        	addRowZusatzbetrag(rpt, z.getFaelligkeit(), z.getIntervallText(), z.getEndedatum(), z.getBuchungstext(), z.getBetrag());
-        	summeHalbjahr += z.getBetrag();
+        if (!buchungstextContainsTax(z.getBuchungstext())) {
+        	double betrag = 0.0;
+        	String buchungstext = "";
+        	
+        	if (!abrechnungslaufDurchgefuehrt) {
+        		betrag = z.getBetrag();
+        		buchungstext = "S) " + z.getBuchungstext();
+        	} else {
+        		MitgliedskontoNode node = new MitgliedskontoNode(m, getFirstDayOfCurrentHalfYear(), getLastDayOfCurrentHalfYear());
+        		betrag = (Double) node.getAttribute("soll");
+        		buchungstext = "B) " + (String) node.getAttribute("zweck1");
+        	}
+        	
+        	addRowZusatzbetrag(rpt, z.getFaelligkeit(), z.getIntervallText(), z.getEndedatum(), buchungstext, betrag);
+        	summeHalbjahr += betrag;
         } else {
         	tax = z;
         }
@@ -473,7 +488,13 @@ public class PersonalbogenAction implements Action
 	  rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
 //    }
     rpt.closeTable();
+    rpt.add("Legende: S-Soll-Zusatzbetrag, B-gebuchter Zusatzbetrag", 7);
   }
+
+private boolean buchungstextContainsTax(String buchungstext) throws RemoteException {
+	return buchungstext.toUpperCase().contains("Mehrwertsteuer".toUpperCase())
+			&& buchungstext.toUpperCase().contains("MwSt".toUpperCase());
+}
 
 	private Date getFaelligkeit() {
 		Calendar cal = Calendar.getInstance();
