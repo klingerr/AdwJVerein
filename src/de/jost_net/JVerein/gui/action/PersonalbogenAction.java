@@ -199,7 +199,7 @@ public class PersonalbogenAction implements Action
 
             if (Einstellungen.getEinstellung().getZusatzbetrag())
             {
-              generiereZusatzbetrag(rpt, m);
+            	generiereZusatzbetrag(rpt, m);
             }
             
             generiereMitgliedskonto2(rpt, m);
@@ -387,114 +387,113 @@ public class PersonalbogenAction implements Action
       }
       rpt.addColumn(akdatum, Element.ALIGN_LEFT);
     }
-//    rpt.addColumn("Zahlungsweg", Element.ALIGN_LEFT);
-//    rpt.addColumn(Zahlungsweg.get(m.getZahlungsweg()), Element.ALIGN_LEFT);
-//    if (m.getBic() != null && m.getBic().length() > 0
-//        && m.getIban().length() > 0)
-//    {
-//      rpt.addColumn("Bankverbindung", Element.ALIGN_LEFT);
-//      rpt.addColumn(m.getBic() + "/" + m.getIban(), Element.ALIGN_LEFT);
-//    }
-//    rpt.addColumn("Datum Erstspeicherung", Element.ALIGN_LEFT);
-//    rpt.addColumn(m.getEingabedatum(), Element.ALIGN_LEFT);
-//    rpt.addColumn("Datum letzte Änderung", Element.ALIGN_LEFT);
-//    rpt.addColumn(m.getLetzteAenderung(), Element.ALIGN_LEFT);
     rpt.closeTable();
   }
 
   public void generiereZusatzbetrag(Reporter rpt, Mitglied m)
-      throws RemoteException, DocumentException
-  {
-    DBIterator it;
+      throws RemoteException, DocumentException {
 
-    // wenn die Zusatzbeträge gebucht sind, d.h. ein Abrechnungslauf durchgeführt wurde
-    it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
-    it.addFilter("mitglied = ?", new Object[] { m.getID() });
-    it.addFilter("ausfuehrung >= ? and ausfuehrung < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
-    it.addFilter("faelligkeit > ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()) });
-    it.setOrder("ORDER BY faelligkeit DESC");
+		double tax = 0.0;
+		this.summeHalbjahr = 0.0;
 
-    boolean abrechnungslaufDurchgefuehrt = it.size() > 0;
-    
-    if (!abrechnungslaufDurchgefuehrt)
-    {
-        // wenn die Zusatzbeträge noch nicht gebucht wurden, d.h. noch kein Abrechnungslauf stattgefunden hat
-        it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
-        it.addFilter("mitglied = ?", new Object[] { m.getID() });
-        it.addFilter("faelligkeit >= ? and faelligkeit < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
-        it.setOrder("ORDER BY faelligkeit DESC");
-        
-        Logger.info("generiereZusatzbetrag(faelligkeit) - it.size(): " + it.size());
-    } else {
-        Logger.info("generiereZusatzbetrag(ausfuehrung) - it.size(): " + it.size());
-    }
-    
-      rpt.add(new Paragraph("Beitrag / Umlagen / Sanktionen"));
-//      rpt.addHeaderColumn("Start", Element.ALIGN_LEFT, 30, BaseColor.LIGHT_GRAY);
-      rpt.addHeaderColumn("nächste Fäll.", Element.ALIGN_LEFT, 23, BaseColor.LIGHT_GRAY);
-//      rpt.addHeaderColumn("letzte Ausf.", Element.ALIGN_LEFT, 30, BaseColor.LIGHT_GRAY);
-      rpt.addHeaderColumn("Intervall", Element.ALIGN_LEFT, 23, BaseColor.LIGHT_GRAY);
-      rpt.addHeaderColumn("Ende", Element.ALIGN_LEFT, 23, BaseColor.LIGHT_GRAY);
-//      rpt.addHeaderColumn("Kostenart", Element.ALIGN_LEFT, 30, BaseColor.LIGHT_GRAY);
-      rpt.addHeaderColumn("Buchungstext", Element.ALIGN_LEFT, 75, BaseColor.LIGHT_GRAY);
-      rpt.addHeaderColumn("Betrag / Monat", Element.ALIGN_RIGHT, 28, BaseColor.LIGHT_GRAY);
-      rpt.addHeaderColumn("Betrag / Halbjahr", Element.ALIGN_RIGHT, 28, BaseColor.LIGHT_GRAY);
-      rpt.createHeader();
-      
-      int numberOfMonthsMembership = 6;
-      if (m.getAustritt() != null) {
-    	  numberOfMonthsMembership = m.getAustritt().getMonth() - getFirstDayOfCurrentHalfYear().getMonth() + 1;
-      }
-      
-      summeHalbjahr = m.getBeitragsgruppe().getBetrag()*numberOfMonthsMembership;
-      addRowZusatzbetrag(rpt, getFaelligkeit(), INTERVALL_HALBJAEHRLICH, null
-    		  , "Mitgliedsbeitrag: " + m.getBeitragsgruppe().getBezeichnung(), summeHalbjahr);
-      
-      Zusatzbetrag tax = null;
-      
-      while (it.hasNext())
-      {
-        Zusatzbetrag z = (Zusatzbetrag) it.next();
-        if (!buchungstextContainsTax(z.getBuchungstext())) {
-        	double betrag = 0.0;
-        	String buchungstext = "";
-        	
-        	if (!abrechnungslaufDurchgefuehrt) {
-        		betrag = z.getBetrag();
-        		buchungstext = "S) " + z.getBuchungstext();
-        	} else {
-        		MitgliedskontoNode node = new MitgliedskontoNode(m, getFirstDayOfCurrentHalfYear(), getLastDayOfCurrentHalfYear());
-        		betrag = (Double) node.getAttribute("soll");
-        		buchungstext = "B) " + (String) node.getAttribute("zweck1");
-        	}
-        	
-        	addRowZusatzbetrag(rpt, z.getFaelligkeit(), z.getIntervallText(), z.getEndedatum(), buchungstext, betrag);
-        	summeHalbjahr += betrag;
-        } else {
-        	tax = z;
-        }
-      }
+		MitgliedskontoNode currentNode = getTermBookings(m, TERM_TYPE_CURRENT);
+		GenericIterator gil = currentNode.getChildren();
+
+		createHeaderBeitragUmlagenSanktionen(rpt);
+
+		if (gil.size() > 0) {
+			// Abrechnungslauf durchgeführt, d.h. Daten aus Tabelle "Mitgliedskonto"
+			Logger.info("Abrechnungslauf durchgeführt");
+
+			while (gil.hasNext()) {
+				MitgliedskontoNode mitgliedskonto = (MitgliedskontoNode) gil.next();
+				if (!((String)mitgliedskonto.getAttribute("zweck1")).toUpperCase().contains("Mehrwertsteuer".toUpperCase())
+						&& !((String)mitgliedskonto.getAttribute("zweck1")).toUpperCase().contains("MwSt".toUpperCase())) {
+					if (((String)mitgliedskonto.getAttribute("zweck1")).toUpperCase().contains("UMLAGE")
+							|| ((String)mitgliedskonto.getAttribute("zweck1")).toUpperCase().contains("BEITRAG")) {
+						addRowZusatzbetrag(rpt, (Date)mitgliedskonto.getAttribute("datum"), INTERVALL_HALBJAEHRLICH, null, (String)mitgliedskonto.getAttribute("zweck1"),
+								(Double)mitgliedskonto.getAttribute("soll"));
+					} else {
+						addRowZusatzbetrag(rpt, (Date)mitgliedskonto.getAttribute("datum"), "", null, (String)mitgliedskonto.getAttribute("zweck1"),
+								(Double)mitgliedskonto.getAttribute("soll"));
+					}
+					summeHalbjahr += (Double)mitgliedskonto.getAttribute("soll");
+					Logger.info("Betrag: " + (Double)mitgliedskonto.getAttribute("soll"));
+				} else {
+					tax = (Double)mitgliedskonto.getAttribute("soll");
+					Logger.info("MwSt: " + (Double)mitgliedskonto.getAttribute("soll"));
+				}
+			}
+
+		} else {
+			// Abrechnungslauf durchgeführt, d.h. Daten aus Tabelle "Zusatzbetrag"
+			Logger.info("Abrechnungslauf ausstehend");
+
+			// Mitgliedsbeitrag zuerst ausgeben
+			summeHalbjahr = m.getBeitragsgruppe().getBetrag() * getMonthsOfMembershipInCurrentHalfyear(m);
+			addRowZusatzbetrag(rpt, getFaelligkeit(), INTERVALL_HALBJAEHRLICH, null,
+					"Mitgliedsbeitrag: " + m.getBeitragsgruppe().getBezeichnung(), summeHalbjahr);
+
+			DBIterator it = getZusatzbetraegeForCurrentHalfyear(m);
+			while (it.hasNext()) {
+				Zusatzbetrag z = (Zusatzbetrag) it.next();
+				if (!z.getBuchungstext().toUpperCase().contains("Mehrwertsteuer".toUpperCase())
+						&& !z.getBuchungstext().toUpperCase().contains("MwSt".toUpperCase())) {
+					addRowZusatzbetrag(rpt, z.getFaelligkeit(), z.getIntervallText(), z.getEndedatum(),
+							z.getBuchungstext(), z.getBetrag());
+					summeHalbjahr += z.getBetrag();
+					Logger.info("Betrag: " + z.getBetrag());
+				} else {
+					tax = z.getBetrag();
+					Logger.info("MwSt: " + z.getBetrag());
+				}
+			}
+		}
       
       // Summenzeilen und MwSt. immer ausweisen
-  	  rpt.addColumn("Gesamtbetrag (netto): ", Element.ALIGN_RIGHT, 4);
+  	  rpt.addColumn("Gesamtbetrag (netto): ", Element.ALIGN_RIGHT, 3);
 	  rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
 	  rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
-	  rpt.addColumn("zzgl. 7% MwSt. auf Bootsliegeentgelt: ", Element.ALIGN_RIGHT, 4);
-	  rpt.addColumn(df.format(tax == null ? 0.0 : tax.getBetrag()/6.0) + " EUR", Element.ALIGN_RIGHT);
-	  rpt.addColumn(df.format(tax == null ? 0.0 : tax.getBetrag()) + " EUR", Element.ALIGN_RIGHT, 4);
-	  summeHalbjahr += tax == null ? 0.0 : tax.getBetrag();
-	  rpt.addColumn("Gesamtbetrag (brutto): ", Element.ALIGN_RIGHT, 4);
+	  rpt.addColumn("zzgl. 7% MwSt. auf Bootsliegeentgelt: ", Element.ALIGN_RIGHT, 3);
+	  rpt.addColumn(df.format(tax/6.0) + " EUR", Element.ALIGN_RIGHT);
+	  rpt.addColumn(df.format(tax) + " EUR", Element.ALIGN_RIGHT, 3);
+	  summeHalbjahr += tax ;
+	  rpt.addColumn("Gesamtbetrag (brutto): ", Element.ALIGN_RIGHT, 3);
 	  rpt.addColumn(df.format(summeHalbjahr/6.0) + " EUR", Element.ALIGN_RIGHT);
 	  rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
-//    }
+      Logger.info("summeHalbjahr: " + summeHalbjahr);
+
     rpt.closeTable();
-    rpt.add("Legende: S-Soll-Zusatzbetrag, B-gebuchter Zusatzbetrag", 7);
   }
 
-private boolean buchungstextContainsTax(String buchungstext) throws RemoteException {
-	return buchungstext.toUpperCase().contains("Mehrwertsteuer".toUpperCase())
-			&& buchungstext.toUpperCase().contains("MwSt".toUpperCase());
-}
+	private DBIterator getZusatzbetraegeForCurrentHalfyear(Mitglied m) throws RemoteException {
+		DBIterator it;
+		// wenn die Zusatzbeträge noch nicht gebucht wurden, d.h. noch kein Abrechnungslauf stattgefunden hat
+		it = Einstellungen.getDBService().createList(Zusatzbetrag.class);
+		it.addFilter("mitglied = ?", new Object[] { m.getID() });
+		it.addFilter("faelligkeit >= ? and faelligkeit < ?", new Object[] { sdf.format(getFirstDayOfCurrentHalfYear()), sdf.format(getLastDayOfCurrentHalfYear()) });
+		it.setOrder("ORDER BY faelligkeit DESC");
+		return it;
+	}
+	
+	private void createHeaderBeitragUmlagenSanktionen(Reporter rpt) throws DocumentException {
+		rpt.add(new Paragraph("Beitrag / Umlagen / Sanktionen"));
+	      rpt.addHeaderColumn("nächste Fäll.", Element.ALIGN_LEFT, 23, BaseColor.LIGHT_GRAY);
+	      rpt.addHeaderColumn("Intervall", Element.ALIGN_LEFT, 23, BaseColor.LIGHT_GRAY);
+//	      rpt.addHeaderColumn("Ende", Element.ALIGN_LEFT, 23, BaseColor.LIGHT_GRAY);
+	      rpt.addHeaderColumn("Buchungstext", Element.ALIGN_LEFT, 75, BaseColor.LIGHT_GRAY);
+	      rpt.addHeaderColumn("Betrag / Monat", Element.ALIGN_RIGHT, 28, BaseColor.LIGHT_GRAY);
+	      rpt.addHeaderColumn("Betrag / Halbjahr", Element.ALIGN_RIGHT, 28, BaseColor.LIGHT_GRAY);
+	      rpt.createHeader();
+	}
+
+	private int getMonthsOfMembershipInCurrentHalfyear(Mitglied m) throws RemoteException {
+		int numberOfMonthsMembership = 6;
+	      if (m.getAustritt() != null) {
+	    	  numberOfMonthsMembership = m.getAustritt().getMonth() - getFirstDayOfCurrentHalfYear().getMonth() + 1;
+	      }
+		return numberOfMonthsMembership;
+	}
 
 	private Date getFaelligkeit() {
 		Calendar cal = Calendar.getInstance();
@@ -515,7 +514,7 @@ private boolean buchungstextContainsTax(String buchungstext) throws RemoteExcept
 			throws RemoteException {
 		rpt.addColumn(faelligkeit, Element.ALIGN_LEFT);
 		rpt.addColumn(intervall, Element.ALIGN_LEFT);
-		rpt.addColumn(endedatum, Element.ALIGN_LEFT);
+//		rpt.addColumn(endedatum, Element.ALIGN_LEFT);
 		rpt.addColumn(buchungstext, Element.ALIGN_LEFT);
 		double monatsBetrag = intervall.equals(INTERVALL_HALBJAEHRLICH) ? halbjahresBetrag/6.0 : 0.0;
 		rpt.addColumn(df.format(monatsBetrag) + " EUR", Element.ALIGN_RIGHT);
@@ -529,42 +528,35 @@ private boolean buchungstextContainsTax(String buchungstext) throws RemoteExcept
 	  	MitgliedskontoNode currentNode = getTermBookings(m, TERM_TYPE_CURRENT);
 	  	MitgliedskontoNode lastNode = getTermBookings(m, TERM_TYPE_LAST);
 	  	
-	    GenericIterator gi1 = currentNode.getChildren();
-//	    if (gi1.size() > 0)
-//	    {
-	        rpt.add(new Paragraph("Mitgliedskontostand (Stichtag: " + new JVDateFormatTTMMJJJJ().format(getLastBookingDate()) + ")"));
-		    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 0, BaseColor.LIGHT_GRAY);
-		    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 0, BaseColor.LIGHT_GRAY);
-		    rpt.addHeaderColumn("", Element.ALIGN_LEFT, 110, BaseColor.LIGHT_GRAY);
-//		    rpt.addHeaderColumn("Datum", Element.ALIGN_CENTER, 20, BaseColor.LIGHT_GRAY);
-//		    rpt.addHeaderColumn("Zweck", Element.ALIGN_LEFT, 70, BaseColor.LIGHT_GRAY);
-//		    rpt.addHeaderColumn("Zahlungsweg", Element.ALIGN_LEFT, 20,  BaseColor.LIGHT_GRAY);
-		    rpt.addHeaderColumn("Forderung", Element.ALIGN_RIGHT, 20, BaseColor.LIGHT_GRAY);
-		    rpt.addHeaderColumn("Einzahlung", Element.ALIGN_RIGHT, 20, BaseColor.LIGHT_GRAY);
-		    rpt.addHeaderColumn("Differenz", Element.ALIGN_RIGHT, 20,  BaseColor.LIGHT_GRAY);
-		    rpt.createHeader();
+        rpt.add(new Paragraph("Mitgliedskontostand (Stichtag: " + new JVDateFormatTTMMJJJJ().format(getLastBookingDate()) + ")"));
+	    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 0, BaseColor.LIGHT_GRAY);
+	    rpt.addHeaderColumn("", Element.ALIGN_CENTER, 0, BaseColor.LIGHT_GRAY);
+	    rpt.addHeaderColumn("", Element.ALIGN_LEFT, 110, BaseColor.LIGHT_GRAY);
+	    rpt.addHeaderColumn("Forderung", Element.ALIGN_RIGHT, 20, BaseColor.LIGHT_GRAY);
+	    rpt.addHeaderColumn("Einzahlung", Element.ALIGN_RIGHT, 20, BaseColor.LIGHT_GRAY);
+	    rpt.addHeaderColumn("Differenz", Element.ALIGN_RIGHT, 20,  BaseColor.LIGHT_GRAY);
+	    rpt.createHeader();
 
-		    // Summenzeile
-		    generiereZeile(rpt, lastNode, null, true);
-	    
-		    // Summenzeile
-//		    generiereZeile(rpt, currentNode, null, false);
-      	    rpt.addColumn("Teilsummen aus aktuellem Halbjahr", Element.ALIGN_LEFT, 3);
-		    rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
-		    rpt.addColumn(df.format((Double) currentNode.getAttribute("ist")) + " EUR", Element.ALIGN_RIGHT);
-		    double diffCurrentTerm = (Double) currentNode.getAttribute("ist") - summeHalbjahr;
-		    rpt.addColumn(df.format(diffCurrentTerm) + " EUR", Element.ALIGN_RIGHT);
+	    generiereZeile(rpt, lastNode, null, true);
+    
+	    // Summenzeile
+  	    rpt.addColumn("Teilsummen aus aktuellem Halbjahr", Element.ALIGN_LEFT, 3);
+	    rpt.addColumn(df.format(summeHalbjahr) + " EUR", Element.ALIGN_RIGHT);
+	    rpt.addColumn(df.format((Double) currentNode.getAttribute("ist")) + " EUR", Element.ALIGN_RIGHT);
+	    double diffCurrentTerm = (Double) currentNode.getAttribute("ist") - summeHalbjahr;
+	    Logger.info("diffCurrentTerm: " + diffCurrentTerm + " =" + (Double) currentNode.getAttribute("ist") + "-" + summeHalbjahr);
 
-		    // Zu zahlender Betrag
-//		    Double payAmount = (Double) lastNode.getAttribute("differenz") + (Double) currentNode.getAttribute("differenz");
-		    Double payAmount = (Double) lastNode.getAttribute("differenz") + diffCurrentTerm;
-		    generiereZeile(rpt, currentNode, payAmount, false);
-//	    
-//			// Summe zurücksetzen, sonst Übertrag zum nächsten Mitglied
-//			summeHalbjahr = 0.0;
+	    rpt.addColumn(df.format(diffCurrentTerm) + " EUR", Element.ALIGN_RIGHT);
 
-//	    }
-	    rpt.closeTable();
+	    // Zu zahlender Betrag
+	    Double payAmount = (Double) lastNode.getAttribute("differenz") + diffCurrentTerm;
+	    Logger.info("name=" + lastNode.getAttribute("name") 
+	    + " ist=" + lastNode.getAttribute("ist") 
+	    + " soll=" + lastNode.getAttribute("soll") 
+	    + " differenz=" + lastNode.getAttribute("differenz"));
+	    generiereZeile(rpt, currentNode, payAmount, false);
+
+		rpt.closeTable();
 	    rpt.add("Bitte die Angaben genau prüfen! Es können unbeabsichtigte Fehler aufgetreten sein.", 9);
 	    
 	    rpt.add("\nBeachte unser neues Beitragskonto:                                               Rückfragen an: Ralf Klinger" +
@@ -659,6 +651,8 @@ private boolean buchungstextContainsTax(String buchungstext) throws RemoteExcept
 		}
 		
 		MitgliedskontoNode node = new MitgliedskontoNode(m, von, bis);
+		Logger.info("MitgliedskontoNode(von: " + von.toLocaleString() + " bis: " + bis.toLocaleString());
+		
 		return node;
 	}
 	
